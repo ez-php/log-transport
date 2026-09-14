@@ -1,6 +1,6 @@
 {
   "name": "ez-php/log-transport",
-  "version": "2.3.3",
+  "version": "2.3.4",
   "description": "Async/remote log shipping (ELK, Datadog, Loki) drivers for ez-php/logging",
   "type": "library",
   "license": "MIT",
