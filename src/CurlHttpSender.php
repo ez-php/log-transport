@@ -59,7 +59,8 @@ final class CurlHttpSender implements HttpSenderInterface
         $failed = curl_errno($handle) !== 0;
         $statusCode = (int) curl_getinfo($handle, CURLINFO_HTTP_CODE);
 
-        curl_close($handle);
+        // curl_close() is deliberately not called: it is deprecated in PHP 8.5 and has had no effect
+        // since PHP 8.0 — the handle is released when it goes out of scope.
 
         return !$failed && $statusCode >= 200 && $statusCode < 300;
     }
