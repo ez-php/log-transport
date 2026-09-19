@@ -263,6 +263,8 @@ src/
 ├── LogEntry.php                   — immutable value object: level, message, context, timestamp
 ├── PayloadFormatterInterface.php  — contract: format(list<LogEntry>): string, contentType(): string
 ├── NdjsonPayloadFormatter.php     — default formatter: newline-delimited JSON, one object per entry
+├── LokiPayloadFormatter.php       — Grafana Loki push-API "streams" format; groups entries into one stream per level, plus configurable static labels
+├── DatadogPayloadFormatter.php    — Datadog Logs intake API envelope; reserved message/status/timestamp/service/ddsource fields, structured context nested to avoid key collisions
 ├── HttpSenderInterface.php        — contract: send(url, payload, headers): bool
 ├── CurlHttpSender.php             — default sender: ext-curl, configurable timeout
 └── HttpTransportDriver.php        — implements EzPhp\Logging\LoggerInterface; buffers + batches + ships
@@ -271,6 +273,8 @@ tests/
 ├── TestCase.php                    — base PHPUnit test case
 ├── FakeHttpSender.php              — test double: records calls instead of making real HTTP requests
 ├── NdjsonPayloadFormatterTest.php  — covers NdjsonPayloadFormatter: encoding, empty batch, content type
+├── LokiPayloadFormatterTest.php    — covers LokiPayloadFormatter: stream grouping by level, unix-nanosecond timestamps, static labels, context-in-line encoding
+├── DatadogPayloadFormatterTest.php — covers DatadogPayloadFormatter: reserved-key encoding, ms-epoch timestamp, optional service/ddsource tags
 └── HttpTransportDriverTest.php     — covers HttpTransportDriver: buffering, auto-flush, manual flush,
                                        failed-send buffer clearing, header merging
 ```
@@ -304,11 +308,22 @@ Immutable value object (`readonly` class) capturing one buffered record: `level`
 ### PayloadFormatterInterface / NdjsonPayloadFormatter
 
 `PayloadFormatterInterface` turns a `list<LogEntry>` batch into a request body plus its
-`Content-Type`. `NdjsonPayloadFormatter` is the only shipped implementation: one JSON object per
-line, generically ingestible by Elasticsearch/OpenSearch-style HTTP bulk endpoints and most
-generic log-collector intake endpoints. Platform-specific formatters (Loki's labelled
-streams format, Datadog's specific envelope, etc.) are follow-up work — see "What Does NOT
-Belong Here".
+`Content-Type`. Three implementations ship:
+
+- `NdjsonPayloadFormatter` — one JSON object per line, generically ingestible by
+  Elasticsearch/OpenSearch-style HTTP bulk endpoints and most generic log-collector intake
+  endpoints.
+- `LokiPayloadFormatter` — Grafana Loki's push-API `{"streams":[{"stream":{...labels},
+  "values":[[nanoTimestamp, line], ...]}]}` shape. Entries are grouped into one stream per
+  distinct `level` value (the one label derivable without configuration); additional static
+  labels (`service`, `env`, …) are passed to the constructor and merged into every stream.
+  Context is appended to the log line as trailing JSON rather than becoming its own Loki
+  label — Loki labels are meant to be low-cardinality, and arbitrary request context is not.
+- `DatadogPayloadFormatter` — a JSON array of Datadog Logs intake objects, one per entry,
+  with `message`/`status`/`timestamp` (ms epoch) as reserved top-level fields, optional
+  `service`/`ddsource` tags from the constructor, and structured context nested under a
+  `context` key (never spread onto the top level) so it can never collide with a Datadog
+  reserved field name.
 
 ### HttpSenderInterface / CurlHttpSender
 
@@ -363,7 +378,7 @@ implementation, backed by `ext-curl`.
 
 | Concern | Where it belongs |
 |---|---|
-| Platform-specific payload formats (Loki streams/labels, Datadog envelope, etc.) | Follow-up `PayloadFormatterInterface` implementations in this module |
+| Platform-specific payload formats beyond ndjson/Loki/Datadog (Splunk HEC, New Relic, etc.) | Follow-up `PayloadFormatterInterface` implementations in this module |
 | Retry queues / guaranteed delivery on send failure | Application layer, or `ez-php/queue` fronting `HttpTransportDriver::flush()` |
 | Log rotation, local file drivers | `ez-php/logging` (`FileDriver`) |
 | Structured log querying / dashboards | External tooling (Kibana, Grafana Loki, Datadog UI, etc.) |
