@@ -39,6 +39,8 @@ $driver->log('error', 'Something failed', ['user_id' => 42]);
 | `NdjsonPayloadFormatter` (default) | Elasticsearch/OpenSearch bulk-style intake, generic HTTP collectors | One JSON object per line |
 | `LokiPayloadFormatter` | Grafana Loki push API | `{"streams":[{"stream":{labels...},"values":[[nanoTs, line], ...]}]}`, grouped one stream per `level` |
 | `DatadogPayloadFormatter` | Datadog Logs intake API | JSON array of `{"message","status","timestamp"(ms),"context":{...}}` objects |
+| `SplunkHecPayloadFormatter` | Splunk HTTP Event Collector (`/services/collector/event`, header `Authorization: Splunk <token>`) | Concatenated `{"time","event":{"message","severity","context"}}` objects; optional `host`/`source`/`sourcetype`/`index` |
+| `NewRelicPayloadFormatter` | New Relic Log API (`/log/v1`, header `Api-Key`) | `[{"common":{"attributes":{…}},"logs":[{"timestamp"(ms),"message","attributes":{"level","context"}}]}]` |
 
 ```php
 use EzPhp\LogTransport\LokiPayloadFormatter;
