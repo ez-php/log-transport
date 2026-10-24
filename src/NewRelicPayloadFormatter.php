@@ -61,7 +61,7 @@ final readonly class NewRelicPayloadFormatter implements PayloadFormatterInterfa
             $common['hostname'] = $this->hostname;
         }
 
-        return json_encode([['common' => ['attributes' => (object) $common], 'logs' => $logs]], JSON_THROW_ON_ERROR);
+        return json_encode([['common' => ['attributes' => (object) $common], 'logs' => $logs]], self::JSON_FLAGS);
     }
 
     /**

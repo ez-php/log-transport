@@ -32,6 +32,12 @@ $driver->log('error', 'Something failed', ['user_id' => 42]);
 // (e.g. at request shutdown) to ship a partial batch.
 ```
 
+Delivery is best-effort and never throws into your code: `flush()` clears the buffer whether the
+send succeeds or not, and returns `false` on failure. Log data JSON cannot carry as is does not
+fail the batch — every formatter encodes with `PayloadFormatterInterface::JSON_FLAGS`, which
+turns invalid UTF-8 into U+FFFD and NAN/INF into `0`. A custom formatter that throws drops its
+batch (`flush()` returns `false`) instead of keeping it buffered, and so does a sender that throws.
+
 ### Payload formats
 
 | Formatter | Target | Shape |

@@ -59,7 +59,7 @@ final class DatadogPayloadFormatter implements PayloadFormatterInterface
             $records[] = $record;
         }
 
-        return json_encode($records, JSON_THROW_ON_ERROR);
+        return json_encode($records, self::JSON_FLAGS);
     }
 
     /**

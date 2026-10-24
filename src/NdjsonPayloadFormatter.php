@@ -35,7 +35,7 @@ final class NdjsonPayloadFormatter implements PayloadFormatterInterface
                 'level' => $entry->level->value,
                 'message' => $entry->message,
                 'context' => $entry->context,
-            ]) ?: '{}';
+            ], self::JSON_FLAGS);
         }
 
         return implode("\n", $lines);

@@ -7,6 +7,7 @@ namespace EzPhp\LogTransport;
 use DateTimeImmutable;
 use EzPhp\Logging\LoggerInterface;
 use EzPhp\Logging\LogLevel;
+use Throwable;
 
 /**
  * Class HttpTransportDriver
@@ -122,6 +123,10 @@ final class HttpTransportDriver implements LoggerInterface
      * delivery guarantees should wrap this driver in their own retry/queue
      * layer rather than relying on it here.
      *
+     * A formatter or sender that throws drops the batch the same way: log()
+     * flushes automatically, and logging must not throw into application code,
+     * nor may one unformattable entry stay buffered and fail every later flush.
+     *
      * @return bool True when the buffer was empty or the send succeeded.
      */
     public function flush(): bool
@@ -130,14 +135,17 @@ final class HttpTransportDriver implements LoggerInterface
             return true;
         }
 
-        $payload = $this->formatter->format($this->buffer);
-        $headers = ['Content-Type' => $this->formatter->contentType(), ...$this->headers];
-
-        $success = $this->sender->send($this->endpoint, $payload, $headers);
-
+        $entries = $this->buffer;
         $this->buffer = [];
 
-        return $success;
+        try {
+            $payload = $this->formatter->format($entries);
+            $headers = ['Content-Type' => $this->formatter->contentType(), ...$this->headers];
+
+            return $this->sender->send($this->endpoint, $payload, $headers);
+        } catch (Throwable) {
+            return false;
+        }
     }
 
     /**

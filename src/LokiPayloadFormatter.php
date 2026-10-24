@@ -55,7 +55,7 @@ final class LokiPayloadFormatter implements PayloadFormatterInterface
             ];
         }
 
-        return json_encode(['streams' => array_values($streams)], JSON_THROW_ON_ERROR);
+        return json_encode(['streams' => array_values($streams)], self::JSON_FLAGS);
     }
 
     /**
@@ -87,6 +87,6 @@ final class LokiPayloadFormatter implements PayloadFormatterInterface
             return $entry->message;
         }
 
-        return $entry->message . ' ' . (json_encode($entry->context, JSON_THROW_ON_ERROR));
+        return $entry->message . ' ' . json_encode($entry->context, self::JSON_FLAGS);
     }
 }

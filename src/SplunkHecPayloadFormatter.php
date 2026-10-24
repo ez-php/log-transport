@@ -60,7 +60,7 @@ final readonly class SplunkHecPayloadFormatter implements PayloadFormatterInterf
                 }
             }
 
-            $body .= json_encode($record, JSON_THROW_ON_ERROR | JSON_PRESERVE_ZERO_FRACTION);
+            $body .= json_encode($record, self::JSON_FLAGS | JSON_PRESERVE_ZERO_FRACTION);
         }
 
         return $body;

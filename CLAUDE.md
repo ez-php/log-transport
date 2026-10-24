@@ -265,7 +265,7 @@ When adding a new module, add `"$ROOT/modules/<name>"` to the `PACKAGES` array i
 
 # Package: ez-php/log-transport
 
-Async/remote log shipping (ELK, Datadog, Loki) drivers for `ez-php/logging` — buffers log
+Async/remote log shipping (ELK/NDJSON, Datadog, Loki, Splunk HEC, New Relic, Graylog GELF) drivers for `ez-php/logging` — buffers log
 entries in memory and ships them as batched HTTP requests, composable behind
 `EzPhp\Logging\StackDriver` like any other `LoggerInterface` driver.
 
@@ -276,7 +276,7 @@ entries in memory and ships them as batched HTTP requests, composable behind
 ```
 src/
 ├── LogEntry.php                   — immutable value object: level, message, context, timestamp
-├── PayloadFormatterInterface.php  — contract: format(list<LogEntry>): string, contentType(): string
+├── PayloadFormatterInterface.php  — contract: format(list<LogEntry>): string, contentType(): string; JSON_FLAGS shared by all formatters
 ├── NdjsonPayloadFormatter.php     — default formatter: newline-delimited JSON, one object per entry
 ├── LokiPayloadFormatter.php       — Grafana Loki push-API "streams" format; groups entries into one stream per level, plus configurable static labels
 ├── GelfPayloadFormatter.php       — Graylog GELF 1.1 over HTTP: newline-separated messages, syslog levels, `_`-prefixed context fields
@@ -285,7 +285,7 @@ src/
 ├── DatadogPayloadFormatter.php    — Datadog Logs intake API envelope; reserved message/status/timestamp/service/ddsource fields, structured context nested to avoid key collisions
 ├── HttpSenderInterface.php        — contract: send(url, payload, headers): bool
 ├── CurlHttpSender.php             — default sender: ext-curl, configurable timeout
-└── HttpTransportDriver.php        — implements EzPhp\Logging\LoggerInterface; buffers + batches + ships
+└── HttpTransportDriver.php        — implements EzPhp\Logging\LoggerInterface; buffers + batches + ships; flush() never throws
 
 tests/
 ├── TestCase.php                    — base PHPUnit test case
@@ -297,8 +297,9 @@ tests/
 ├── SplunkAndNewRelicPayloadFormatterTest.php — exact bodies for both formats, optional metadata, empty batches
 ├── GelfPayloadFormatterTest.php    — covers GelfPayloadFormatter: required fields, syslog levels, additional-field naming/encoding, default host
 ├── DatadogPayloadFormatterTest.php — covers DatadogPayloadFormatter: reserved-key encoding, ms-epoch timestamp, optional service/ddsource tags
-└── HttpTransportDriverTest.php     — covers HttpTransportDriver: buffering, auto-flush, manual flush,
-                                       failed-send buffer clearing, header merging
+├── HttpTransportDriverTest.php     — covers HttpTransportDriver: buffering, auto-flush, manual flush,
+│                                      failed-send buffer clearing, header merging
+└── LogTransportUnencodableEntryTest.php — invalid UTF-8 / NAN entries through all six formatters; a throwing formatter or sender drops its batch
 ```
 
 ---
@@ -330,7 +331,7 @@ Immutable value object (`readonly` class) capturing one buffered record: `level`
 ### PayloadFormatterInterface / NdjsonPayloadFormatter
 
 `PayloadFormatterInterface` turns a `list<LogEntry>` batch into a request body plus its
-`Content-Type`. Three implementations ship:
+`Content-Type`. Six implementations ship:
 
 - `NdjsonPayloadFormatter` — one JSON object per line, generically ingestible by
   Elasticsearch/OpenSearch-style HTTP bulk endpoints and most generic log-collector intake
@@ -346,6 +347,16 @@ Immutable value object (`readonly` class) capturing one buffered record: `level`
   `service`/`ddsource` tags from the constructor, and structured context nested under a
   `context` key (never spread onto the top level) so it can never collide with a Datadog
   reserved field name.
+- `SplunkHecPayloadFormatter` — Splunk HTTP Event Collector batch: concatenated
+  `{time, event{message, severity, context}}` objects, plus optional `host`/`source`/
+  `sourcetype`/`index` metadata from the constructor.
+- `NewRelicPayloadFormatter` — New Relic Log API "detailed" format: one `common` block
+  (`service.name`, `hostname`) and the entries as `logs` with `level`/`context` attributes.
+- `GelfPayloadFormatter` — Graylog GELF 1.1 over HTTP: newline-separated messages with syslog
+  levels and `_`-prefixed context fields (see Design Decisions).
+
+All six encode with `PayloadFormatterInterface::JSON_FLAGS` (see Design Decisions,
+"Unencodable log data never throws").
 
 ### HttpSenderInterface / CurlHttpSender
 
@@ -358,6 +369,13 @@ implementation, backed by `ext-curl`.
 ## Design Decisions and Constraints
 
 - **GELF goes over HTTP only, newline-delimited** — `GelfPayloadFormatter` targets Graylog's GELF HTTP input, which the existing `HttpTransportDriver` already speaks; UDP (chunked) and TCP GELF would need a second transport and are out of scope. GELF additional fields carry only strings and numbers, so other context values are JSON-encoded, keys are sanitised to `[\w.-]`, and `id` (reserved `_id`) becomes `_ctx_id`. A multi-entry batch needs the input's bulk receiving; otherwise use `batchSize: 1`.
+- **Unencodable log data never throws** — log messages and context come from anywhere, and
+  `log()` flushes by itself, so a `JsonException` there would throw into application code and —
+  with the entry still buffered — fail every later `log()` too. `PayloadFormatterInterface::JSON_FLAGS`
+  (`JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE | JSON_PARTIAL_OUTPUT_ON_ERROR`) makes the
+  shipped formatters substitute instead (U+FFFD for invalid UTF-8, `0` for NAN/INF); `flush()`
+  takes the batch out of the buffer before formatting and drops it (returns `false`) if a
+  custom formatter — or the sender (`CurlHttpSender` throws when `curl_init()` fails) — throws anyway.
 - **Best-effort delivery, buffer always cleared on flush** — `flush()` clears the buffer whether
   `HttpSenderInterface::send()` succeeds or fails. A remote outage must not grow the in-memory
   buffer without bound inside a long-running process (e.g. a queue worker). Callers that need
@@ -379,11 +397,11 @@ implementation, backed by `ext-curl`.
 
 ## Testing Approach
 
-- **No infrastructure required** — all tests run in-process against `FakeHttpSender`; no real
-  network calls, no Docker services.
-- **`CurlHttpSender` has no dedicated unit test** — it is a thin wrapper with no branching logic
-  worth mocking `curl_*` globals for; its behavior is exercised through `HttpSenderInterface`'s
-  contract via `FakeHttpSender` in `HttpTransportDriverTest`.
+- **No infrastructure required** — tests run in-process against `FakeHttpSender`, except
+  `CurlHttpSenderTest`'s loopback server; no Docker services.
+- **`CurlHttpSenderTest` runs the real cURL transport** against a `php -S` server on
+  127.0.0.1 (router: `tests/Support/curl-sender-server.php`) — loopback only, no internet access
+  and no Docker service. Everything else uses `FakeHttpSender`.
 - Test classes live in the shared `Tests\` namespace but must be uniquely named
   across the whole monorepo — the root `phpunit.xml` loads every package in one
   process, so a duplicate name is a fatal error, not a test failure. Prefix with

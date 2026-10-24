@@ -59,10 +59,10 @@ final class GelfPayloadFormatter implements PayloadFormatterInterface
             foreach ($entry->context as $key => $value) {
                 $message[self::fieldName((string) $key)] = is_string($value) || is_int($value) || is_float($value)
                     ? $value
-                    : json_encode($value, JSON_THROW_ON_ERROR);
+                    : json_encode($value, self::JSON_FLAGS);
             }
 
-            $lines[] = json_encode($message, JSON_THROW_ON_ERROR);
+            $lines[] = json_encode($message, self::JSON_FLAGS);
         }
 
         return implode("\n", $lines);
