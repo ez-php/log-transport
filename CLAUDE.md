@@ -290,6 +290,7 @@ tests/
 ├── TestCase.php                    — base PHPUnit test case
 ├── CurlHttpSenderTest.php  — Exercises the real cURL transport against a `php -S` server on 127.0.0.1; no internet access needed
 ├── FakeHttpSender.php              — test double: records calls instead of making real HTTP requests
+├── Support/curl-sender-server.php  — router for the `php -S` server started by CurlHttpSenderTest
 ├── NdjsonPayloadFormatterTest.php  — covers NdjsonPayloadFormatter: encoding, empty batch, content type
 ├── LokiPayloadFormatterTest.php    — covers LokiPayloadFormatter: stream grouping by level, unix-nanosecond timestamps, static labels, context-in-line encoding
 ├── SplunkAndNewRelicPayloadFormatterTest.php — exact bodies for both formats, optional metadata, empty batches
