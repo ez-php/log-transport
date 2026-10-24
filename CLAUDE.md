@@ -279,6 +279,7 @@ src/
 ├── PayloadFormatterInterface.php  — contract: format(list<LogEntry>): string, contentType(): string
 ├── NdjsonPayloadFormatter.php     — default formatter: newline-delimited JSON, one object per entry
 ├── LokiPayloadFormatter.php       — Grafana Loki push-API "streams" format; groups entries into one stream per level, plus configurable static labels
+├── GelfPayloadFormatter.php       — Graylog GELF 1.1 over HTTP: newline-separated messages, syslog levels, `_`-prefixed context fields
 ├── SplunkHecPayloadFormatter.php  — Splunk HEC batch: concatenated {time, event{message,severity,context}} objects + optional host/source/sourcetype/index
 ├── NewRelicPayloadFormatter.php   — New Relic Log API detailed format: common attributes (service.name, hostname) + logs with level/context attributes
 ├── DatadogPayloadFormatter.php    — Datadog Logs intake API envelope; reserved message/status/timestamp/service/ddsource fields, structured context nested to avoid key collisions
@@ -294,6 +295,7 @@ tests/
 ├── NdjsonPayloadFormatterTest.php  — covers NdjsonPayloadFormatter: encoding, empty batch, content type
 ├── LokiPayloadFormatterTest.php    — covers LokiPayloadFormatter: stream grouping by level, unix-nanosecond timestamps, static labels, context-in-line encoding
 ├── SplunkAndNewRelicPayloadFormatterTest.php — exact bodies for both formats, optional metadata, empty batches
+├── GelfPayloadFormatterTest.php    — covers GelfPayloadFormatter: required fields, syslog levels, additional-field naming/encoding, default host
 ├── DatadogPayloadFormatterTest.php — covers DatadogPayloadFormatter: reserved-key encoding, ms-epoch timestamp, optional service/ddsource tags
 └── HttpTransportDriverTest.php     — covers HttpTransportDriver: buffering, auto-flush, manual flush,
                                        failed-send buffer clearing, header merging
@@ -355,6 +357,7 @@ implementation, backed by `ext-curl`.
 
 ## Design Decisions and Constraints
 
+- **GELF goes over HTTP only, newline-delimited** — `GelfPayloadFormatter` targets Graylog's GELF HTTP input, which the existing `HttpTransportDriver` already speaks; UDP (chunked) and TCP GELF would need a second transport and are out of scope. GELF additional fields carry only strings and numbers, so other context values are JSON-encoded, keys are sanitised to `[\w.-]`, and `id` (reserved `_id`) becomes `_ctx_id`. A multi-entry batch needs the input's bulk receiving; otherwise use `batchSize: 1`.
 - **Best-effort delivery, buffer always cleared on flush** — `flush()` clears the buffer whether
   `HttpSenderInterface::send()` succeeds or fails. A remote outage must not grow the in-memory
   buffer without bound inside a long-running process (e.g. a queue worker). Callers that need
@@ -398,7 +401,7 @@ implementation, backed by `ext-curl`.
 
 | Concern | Where it belongs |
 |---|---|
-| Platform-specific payload formats beyond ndjson/Loki/Datadog/Splunk HEC/New Relic | Follow-up `PayloadFormatterInterface` implementations in this module |
+| Platform-specific payload formats beyond ndjson/Loki/Datadog/Splunk HEC/New Relic/GELF | Follow-up `PayloadFormatterInterface` implementations in this module |
 | Retry queues / guaranteed delivery on send failure | Application layer, or `ez-php/queue` fronting `HttpTransportDriver::flush()` |
 | Log rotation, local file drivers | `ez-php/logging` (`FileDriver`) |
 | Structured log querying / dashboards | External tooling (Kibana, Grafana Loki, Datadog UI, etc.) |

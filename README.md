@@ -41,6 +41,7 @@ $driver->log('error', 'Something failed', ['user_id' => 42]);
 | `DatadogPayloadFormatter` | Datadog Logs intake API | JSON array of `{"message","status","timestamp"(ms),"context":{...}}` objects |
 | `SplunkHecPayloadFormatter` | Splunk HTTP Event Collector (`/services/collector/event`, header `Authorization: Splunk <token>`) | Concatenated `{"time","event":{"message","severity","context"}}` objects; optional `host`/`source`/`sourcetype`/`index` |
 | `NewRelicPayloadFormatter` | New Relic Log API (`/log/v1`, header `Api-Key`) | `[{"common":{"attributes":{…}},"logs":[{"timestamp"(ms),"message","attributes":{"level","context"}}]}]` |
+| `GelfPayloadFormatter` | Graylog GELF HTTP input (`/gelf`) | Newline-separated GELF 1.1 messages `{"version","host","short_message","timestamp","level"(syslog),"_<context key>"…}`; use `batchSize: 1` unless the input has bulk receiving enabled |
 
 ```php
 use EzPhp\LogTransport\LokiPayloadFormatter;
