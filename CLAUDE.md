@@ -151,7 +151,7 @@ php make_module.php <name> --description="..." --services=mysql,redis --extensio
 
 `<name>` is the kebab-case package name; the namespace is derived as
 `EzPhp\<PascalCase>` (each `-`-separated word upper-cased) unless `--namespace=`
-overrides it. Existing exceptions the guess gets wrong: `asyncapi` → `AsyncApi`,
+overrides it. Existing exceptions the guess gets wrong: `asyncapi` → `AsyncApi`, `asyncapi-ui` → `AsyncApiUi`,
 `bignum` → `BigNum`, `dataloader` → `DataLoader`, `dotenv` → `Env`, `graphql` → `GraphQL`, `graphql-subscriptions` → `GraphQLSubscriptions`, `oauth` → `OAuth`,
 `opcache` → `OPCache`, `openapi` → `OpenApi`, `qrcode` → `QrCode`, `swagger-ui` → `SwaggerUI`, `webauthn` → `WebAuthn` and
 `websocket` → `WebSocket`; `websocket-client` → `WebsocketClient`, `websocket-tls` → `WebsocketTls`,
@@ -265,7 +265,7 @@ When adding a new module, add `"$ROOT/modules/<name>"` to the `PACKAGES` array i
 
 # Package: ez-php/log-transport
 
-Async/remote log shipping (ELK/NDJSON, Datadog, Loki, Splunk HEC, New Relic, Graylog GELF) drivers for `ez-php/logging` — buffers log
+Async/remote log shipping (ELK/NDJSON, Datadog, Loki, Splunk HEC, New Relic, Graylog GELF, OTLP) drivers for `ez-php/logging` — buffers log
 entries in memory and ships them as batched HTTP requests, composable behind
 `EzPhp\Logging\StackDriver` like any other `LoggerInterface` driver.
 
@@ -282,6 +282,7 @@ src/
 ├── GelfPayloadFormatter.php       — Graylog GELF 1.1 over HTTP: newline-separated messages, syslog levels, `_`-prefixed context fields
 ├── SplunkHecPayloadFormatter.php  — Splunk HEC batch: concatenated {time, event{message,severity,context}} objects + optional host/source/sourcetype/index
 ├── NewRelicPayloadFormatter.php   — New Relic Log API detailed format: common attributes (service.name, hostname) + logs with level/context attributes
+├── OtlpLogsPayloadFormatter.php   — OpenTelemetry OTLP/HTTP JSON logs (`resourceLogs`): severity numbers, typed context attributes, trace_id/span_id → traceId/spanId
 ├── DatadogPayloadFormatter.php    — Datadog Logs intake API envelope; reserved message/status/timestamp/service/ddsource fields, structured context nested to avoid key collisions
 ├── HttpSenderInterface.php        — contract: send(url, payload, headers): bool
 ├── CurlHttpSender.php             — default sender: ext-curl, configurable timeout
@@ -296,10 +297,11 @@ tests/
 ├── LokiPayloadFormatterTest.php    — covers LokiPayloadFormatter: stream grouping by level, unix-nanosecond timestamps, static labels, context-in-line encoding
 ├── SplunkAndNewRelicPayloadFormatterTest.php — exact bodies for both formats, optional metadata, empty batches
 ├── GelfPayloadFormatterTest.php    — covers GelfPayloadFormatter: required fields, syslog levels, additional-field naming/encoding, default host
+├── OtlpLogsPayloadFormatterTest.php — exact resourceLogs body, severity numbers, typed attributes, trace/span linking, malformed ids kept as attributes
 ├── DatadogPayloadFormatterTest.php — covers DatadogPayloadFormatter: reserved-key encoding, ms-epoch timestamp, optional service/ddsource tags
 ├── HttpTransportDriverTest.php     — covers HttpTransportDriver: buffering, auto-flush, manual flush,
 │                                      failed-send buffer clearing, header merging
-└── LogTransportUnencodableEntryTest.php — invalid UTF-8 / NAN entries through all six formatters; a throwing formatter or sender drops its batch
+└── LogTransportUnencodableEntryTest.php — invalid UTF-8 / NAN entries through all seven formatters; a throwing formatter or sender drops its batch
 ```
 
 ---
@@ -331,7 +333,7 @@ Immutable value object (`readonly` class) capturing one buffered record: `level`
 ### PayloadFormatterInterface / NdjsonPayloadFormatter
 
 `PayloadFormatterInterface` turns a `list<LogEntry>` batch into a request body plus its
-`Content-Type`. Six implementations ship:
+`Content-Type`. Seven implementations ship:
 
 - `NdjsonPayloadFormatter` — one JSON object per line, generically ingestible by
   Elasticsearch/OpenSearch-style HTTP bulk endpoints and most generic log-collector intake
@@ -354,8 +356,10 @@ Immutable value object (`readonly` class) capturing one buffered record: `level`
   (`service.name`, `hostname`) and the entries as `logs` with `level`/`context` attributes.
 - `GelfPayloadFormatter` — Graylog GELF 1.1 over HTTP: newline-separated messages with syslog
   levels and `_`-prefixed context fields (see Design Decisions).
+- `OtlpLogsPayloadFormatter` — OpenTelemetry OTLP/HTTP JSON logs for a collector's `/v1/logs`
+  (see Design Decisions).
 
-All six encode with `PayloadFormatterInterface::JSON_FLAGS` (see Design Decisions,
+All seven encode with `PayloadFormatterInterface::JSON_FLAGS` (see Design Decisions,
 "Unencodable log data never throws").
 
 ### HttpSenderInterface / CurlHttpSender
@@ -368,6 +372,7 @@ implementation, backed by `ext-curl`.
 
 ## Design Decisions and Constraints
 
+- **OTLP logs reuse the trace context `ez-php/otel` already puts into the log context** — `TraceContextLogger` adds `trace_id`/`span_id`; the formatter turns well-formed ones (32 / 16 hex) into the record's `traceId`/`spanId`, so a collector links logs to spans without this module importing `ez-php/otel`. Other context entries become typed attributes (int64 as a string, as OTLP JSON requires). JSON only — protobuf/gRPC would need an encoder and a second transport. The scope name is fixed (`ez-php/log-transport`); `service.name` and extra resource attributes come from the constructor, matching `ez-php/metrics-otlp`.
 - **GELF goes over HTTP only, newline-delimited** — `GelfPayloadFormatter` targets Graylog's GELF HTTP input, which the existing `HttpTransportDriver` already speaks; UDP (chunked) and TCP GELF would need a second transport and are out of scope. GELF additional fields carry only strings and numbers, so other context values are JSON-encoded, keys are sanitised to `[\w.-]`, and `id` (reserved `_id`) becomes `_ctx_id`. A multi-entry batch needs the input's bulk receiving; otherwise use `batchSize: 1`.
 - **Unencodable log data never throws** — log messages and context come from anywhere, and
   `log()` flushes by itself, so a `JsonException` there would throw into application code and —
@@ -419,7 +424,7 @@ implementation, backed by `ext-curl`.
 
 | Concern | Where it belongs |
 |---|---|
-| Platform-specific payload formats beyond ndjson/Loki/Datadog/Splunk HEC/New Relic/GELF | Follow-up `PayloadFormatterInterface` implementations in this module |
+| Platform-specific payload formats beyond ndjson/Loki/Datadog/Splunk HEC/New Relic/GELF/OTLP | Follow-up `PayloadFormatterInterface` implementations in this module |
 | Retry queues / guaranteed delivery on send failure | Application layer, or `ez-php/queue` fronting `HttpTransportDriver::flush()` |
 | Log rotation, local file drivers | `ez-php/logging` (`FileDriver`) |
 | Structured log querying / dashboards | External tooling (Kibana, Grafana Loki, Datadog UI, etc.) |

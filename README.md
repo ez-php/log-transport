@@ -48,6 +48,7 @@ batch (`flush()` returns `false`) instead of keeping it buffered, and so does a 
 | `SplunkHecPayloadFormatter` | Splunk HTTP Event Collector (`/services/collector/event`, header `Authorization: Splunk <token>`) | Concatenated `{"time","event":{"message","severity","context"}}` objects; optional `host`/`source`/`sourcetype`/`index` |
 | `NewRelicPayloadFormatter` | New Relic Log API (`/log/v1`, header `Api-Key`) | `[{"common":{"attributes":{…}},"logs":[{"timestamp"(ms),"message","attributes":{"level","context"}}]}]` |
 | `GelfPayloadFormatter` | Graylog GELF HTTP input (`/gelf`) | Newline-separated GELF 1.1 messages `{"version","host","short_message","timestamp","level"(syslog),"_<context key>"…}`; use `batchSize: 1` unless the input has bulk receiving enabled |
+| `OtlpLogsPayloadFormatter` | OpenTelemetry collector OTLP/HTTP (`/v1/logs`) | `{"resourceLogs":[{resource{service.name}, scopeLogs[{logRecords[{timeUnixNano, severityNumber, severityText, body, attributes, traceId, spanId}]}]}]}`; `trace_id`/`span_id` from ez-php/otel's `TraceContextLogger` link the record to its span: `new OtlpLogsPayloadFormatter('billing')` |
 
 ```php
 use EzPhp\LogTransport\LokiPayloadFormatter;

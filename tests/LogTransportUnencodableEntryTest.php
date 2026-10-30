@@ -12,6 +12,7 @@ use EzPhp\LogTransport\LogEntry;
 use EzPhp\LogTransport\LokiPayloadFormatter;
 use EzPhp\LogTransport\NdjsonPayloadFormatter;
 use EzPhp\LogTransport\NewRelicPayloadFormatter;
+use EzPhp\LogTransport\OtlpLogsPayloadFormatter;
 use EzPhp\LogTransport\PayloadFormatterInterface;
 use EzPhp\LogTransport\SplunkHecPayloadFormatter;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -33,6 +34,7 @@ use RuntimeException;
 #[CoversClass(GelfPayloadFormatter::class)]
 #[CoversClass(SplunkHecPayloadFormatter::class)]
 #[CoversClass(NewRelicPayloadFormatter::class)]
+#[CoversClass(OtlpLogsPayloadFormatter::class)]
 #[CoversClass(DatadogPayloadFormatter::class)]
 #[UsesClass(LogEntry::class)]
 final class LogTransportUnencodableEntryTest extends TestCase
@@ -49,6 +51,7 @@ final class LogTransportUnencodableEntryTest extends TestCase
             'splunk' => [new SplunkHecPayloadFormatter()],
             'new relic' => [new NewRelicPayloadFormatter()],
             'datadog' => [new DatadogPayloadFormatter()],
+            'otlp' => [new OtlpLogsPayloadFormatter('app')],
         ];
     }
 
